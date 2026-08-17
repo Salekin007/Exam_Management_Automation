@@ -32,7 +32,7 @@ import * as path from 'path';
 const PASSWORD = 'Student@1234';
 
 // Unique exam code provided by the invigilator/system to verify exam entry
-const EXAM_CODE = '418116';
+const EXAM_CODE = '906164';
 
 // ─── User Interface & CSV Loader ───────────────────────────────────────────
 
@@ -93,8 +93,8 @@ for (const user of users) {
     });
 
     await page.goto('https://exam-ai-lms.eatlbd.com/login');
-    await page.getByRole('textbox', { name: 'Enter your email' }).waitFor();
-    await page.getByRole('textbox', { name: 'Enter your email' }).fill(user.email);
+    await page.getByRole('textbox', { name: 'Enter your username' }).waitFor();
+    await page.getByRole('textbox', { name: 'Enter your username' }).fill(user.email);
     await page.getByRole('textbox', { name: 'Enter your password' }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Enter Exam Portal' }).click();
 
@@ -102,7 +102,7 @@ for (const user of users) {
     // Find the General Surgery exam card and click "Grant Access" if visible.
     // Uses JavaScript evaluate to bypass any overlay or interception issues.
     // The browser permission prompt is auto-accepted by --use-fake-ui-for-media-stream.
-    const examCard = page.getByRole('article').filter({ hasText: 'General Surgery' });
+    const examCard = page.getByRole('article').filter({ hasText: 'Biochemistry' });
 
     // Click "Grant Access" button via JavaScript to bypass any blockers
     await page.evaluate(() => {
@@ -184,20 +184,37 @@ for (const user of users) {
       });
 
       if (submitVisible) {
-        // Click Submit via JavaScript
+        // Click Submit via JavaScript to open the confirmation dialog
         await page.evaluate(() => {
           const btns = Array.from(document.querySelectorAll('button'));
           const submitBtn = btns.find(b => b.textContent?.trim() === 'Submit' && !b.disabled);
           if (submitBtn) submitBtn.click();
         });
-        await page.waitForTimeout(1000);
 
-        // Click "Submit and Exit" confirmation
-        await page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll('button'));
-          const confirmBtn = btns.find(b => b.textContent?.includes('Submit and Exit'));
-          if (confirmBtn) confirmBtn.click();
-        });
+        // Click the confirmation button. The label has changed over time
+        // ("Submit and Exit", "Submit & Exit", ...), so accept any
+        // affirmative button, preferring ones inside the modal dialog.
+        let confirmed = false;
+        for (let attempt = 0; attempt < 20 && !confirmed; attempt++) {
+          confirmed = await page.evaluate(() => {
+            const scopes = [
+              document.querySelector('[role="dialog"]') ?? document.querySelector('dialog'),
+              document.body,
+            ].filter((s): s is HTMLElement => !!s);
+            for (const scope of scopes) {
+              const btns = Array.from(scope.querySelectorAll('button')).filter(
+                b => !b.disabled && !!(b as HTMLElement).offsetParent
+              );
+              const confirmBtn = btns.find(b => {
+                const t = (b.textContent || '').trim();
+                return t !== 'Submit' && /submit|confirm|yes|ok|finish|end/i.test(t);
+              });
+              if (confirmBtn) { (confirmBtn as HTMLElement).click(); return true; }
+            }
+            return false;
+          });
+          if (!confirmed) await page.waitForTimeout(500);
+        }
         break;
       }
 
@@ -212,9 +229,22 @@ for (const user of users) {
     }
 
     // ─── Step 8: Return to Dashboard & Logout ─────────────────────────────
-    await page.getByRole('button', { name: 'Return to Dashboard' }).waitFor();
-    await page.getByRole('button', { name: 'Return to Dashboard' }).click();
-    await page.getByRole('button', { name: 'Logout' }).waitFor();
-    await page.getByRole('button', { name: 'Logout' }).click();
+    // Submission usually auto-redirects to a result page. If a
+    // "Return to Dashboard" button exists, click it; otherwise go directly.
+    await page.getByRole('button', { name: 'Return to Dashboard' }).waitFor({ timeout: 15_000 })
+      .catch(() => { /* already redirected — fall through */ });
+    if (await page.getByRole('button', { name: 'Return to Dashboard' }).isVisible()) {
+      await page.getByRole('button', { name: 'Return to Dashboard' }).click();
+    }
+
+    // ─── Step 9: Logout ──────────────────────────────────────────────────
+    // A Logout button may exist in the header; if not, navigate directly.
+    await page.getByRole('button', { name: 'Logout' }).waitFor({ timeout: 15_000 })
+      .catch(() => { /* no button — navigate below */ });
+    if (await page.getByRole('button', { name: 'Logout' }).isVisible()) {
+      await page.getByRole('button', { name: 'Logout' }).click();
+    } else {
+      await page.goto('https://exam-ai-lms.eatlbd.com/logout');
+    }
   });
 }
