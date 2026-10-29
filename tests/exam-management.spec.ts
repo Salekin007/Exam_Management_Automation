@@ -32,7 +32,7 @@ import * as path from 'path';
 const PASSWORD = 'Student@1234';
 
 // Unique exam code provided by the invigilator/system to verify exam entry
-const EXAM_CODE = '906164';
+const EXAM_CODE = '198924';
 
 // ─── User Interface & CSV Loader ───────────────────────────────────────────
 
